@@ -1,5 +1,11 @@
 # RegistryJS
 
+## Install
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/lesichkovm/RegistryJS@0.0.1/Registry.js"></script>
+```
+
 ```js
 const registry = new Registry();
 ```
