@@ -1,7 +1,8 @@
-(function (factory) {
+(function (global, factory) {
+  typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
   typeof define === 'function' && define.amd ? define(factory) :
-  factory();
-})((function () { 'use strict';
+  (global = typeof globalThis !== 'undefined' ? globalThis : global || self, global.Registry = factory());
+})(this, (function () { 'use strict';
 
   /**
    * Constructs and returns the root URL (origin) of the current web page.
@@ -54,6 +55,44 @@
     return "unknown";
   }
 
+  /**
+   * Encodes a string to base64
+   * @param {string} str - The string to encode
+   * @returns {string} Base64 encoded string
+   */
+  function base64encode(str) {
+    if (typeof btoa === 'function') {
+      return btoa(str);
+    } else if (typeof Buffer !== 'undefined') {
+      // Node.js environment
+      return Buffer.from(str).toString('base64');
+    }
+    throw new Error('Base64 encoding not supported in this environment');
+  }
+
+  /**
+   * JSON stringify wrapper
+   * @param {any} data - Data to stringify
+   * @returns {string} JSON string
+   */
+  function jsonEncode(data) {
+    return JSON.stringify(data);
+  }
+
+  /**
+   * JSON parse wrapper
+   * @param {string} json - JSON string to parse
+   * @returns {any} Parsed data
+   */
+  function jsonDecode(json) {
+    return JSON.parse(json);
+  }
+
+  /**
+   * Generates a namespaced key for storage
+   * @param {string|null} namespace - Optional namespace
+   * @returns {string} Base64 encoded namespace
+   */
   function getNamespace(namespace) {
       let namespaceFinal = "";
       if (typeof namespace === "undefined" || namespace === null || namespace === "") {
@@ -64,165 +103,260 @@
       return base64encode(namespaceFinal);
   }
 
-  function base64encode(str) {
-      return btoa(str);
+  /**
+   * Creates a namespaced key
+   * @param {string} key - The original key
+   * @param {string} namespace - The namespace
+   * @returns {string} Namespaced key
+   */
+  function createNamespacedKey(key, namespace) {
+      return key + namespace;
   }
 
   /**
-   * Creates a new instance of the Registry class.
-   * 
-   * @param {string} [namespace] - An optional namespace for storing values. If not provided, the hostname of the current URL is used.
-   * 
-   * @example
-   * const registry = new Registry();
-   * const registry = new Registry('my-app');
+   * Creates an expiration key
+   * @param {string} namespacedKey - The namespaced key
+   * @returns {string} Expiration key
    */
-  function Registry(namespace) {
-      const namespaceFinal = "@" + getNamespace(namespace);
+  function createExpirationKey(namespacedKey) {
+      return namespacedKey + "&&expires";
+  }
+
+  /**
+   * Encrypts a value using the original Registry encryption algorithm
+   * @param {any} value - Value to encrypt
+   * @param {string} key - Encryption key (password)
+   * @returns {string} - Encrypted string
+   */
+  function encrypt(value, key) {
+    // Handle null or undefined values
+    if (value === null || value === undefined) {
+      return "__NULL__";
+    }
     
-      const defaultPassword =
-        "8pVbaKePV3beCUZYbKSfujzucbcD3eqyJvCAUgQL8PbYe3VmAMSKC9esx8jV8M7KegPsxkDTpUKvu2UenQyPPjsDf92XnjtZh5GJRz8bQHZngNGKenKZHDD8";
+    // Convert value to JSON string
+    const jsonString = jsonEncode(value);
+    const passLen = key.length;
     
-      const password = namespace == "" ? namespace : defaultPassword;
+    const result = [];
+    for (let i = 0; i < jsonString.length; i++) {
+      const passOffset = i % passLen;
+      const calAscii = jsonString.charCodeAt(i) + key.charCodeAt(passOffset);
+      result.push(calAscii);
+    }
+
+    return jsonEncode(result);
+  }
+
+  /**
+   * Decrypts a value using the original Registry decryption algorithm
+   * @param {string} encryptedStr - Encrypted string
+   * @param {string} key - Encryption key (password)
+   * @returns {any} - Decrypted value
+   */
+  function decrypt(encryptedStr, key) {
+    // Special case for null values
+    if (encryptedStr === "__NULL__") {
+      return null;
+    }
     
-      function jsonDecode(json) {
-        return JSON.parse(json);
+    try {
+      const codesArr = jsonDecode(encryptedStr);
+      const passLen = key.length;
+      
+      const result = [];
+      for (let i = 0; i < codesArr.length; i++) {
+        const passOffset = i % passLen;
+        const calAscii = codesArr[i] - key.charCodeAt(passOffset);
+        result.push(calAscii);
       }
-    
-      function jsonEncode(string) {
-        return JSON.stringify(string);
+
+      let str = "";
+      for (let i = 0; i < result.length; i++) {
+        const ch = String.fromCharCode(result[i]);
+        str += ch;
       }
+
+      return jsonDecode(str);
+    } catch (e) {
+      console.error('Error decrypting value:', e);
+      return null;
+    }
+  }
+
+  /**
+   * Checks if a value has expired
+   * @param {string} namespacedKey - The namespaced key to check
+   * @returns {boolean} True if expired, false otherwise
+   */
+  function isExpired(namespacedKey) {
+    const expirationKey = createExpirationKey(namespacedKey);
+    const expiresValue = localStorage.getItem(expirationKey);
     
+    if (expiresValue === null) {
+      return false;
+    }
+    
+    const expires = parseInt(expiresValue, 10);
+    const now = Math.floor(Date.now() / 1000);
+    
+    return now >= expires;
+  }
+
+  /**
+   * Sets a value in localStorage with optional expiration
+   * @param {string} namespacedKey - The namespaced key
+   * @param {any} value - The value to store
+   * @param {number} [expires] - Optional expiration time in seconds
+   */
+  function setValue(namespacedKey, value, expires) {
+    // Store the value
+    localStorage.setItem(namespacedKey, jsonEncode(value));
+    
+    // Set expiration if provided
+    if (typeof expires === 'number') {
+      const expirationKey = createExpirationKey(namespacedKey);
+      const expirationTime = Math.floor(Date.now() / 1000) + expires;
+      localStorage.setItem(expirationKey, expirationTime.toString());
+    }
+  }
+
+  /**
+   * Gets a value from localStorage, checking for expiration
+   * @param {string} namespacedKey - The namespaced key
+   * @returns {any} The stored value or null if expired/not found
+   */
+  function getValue(namespacedKey) {
+    // Check if the value has expired
+    if (isExpired(namespacedKey)) {
+      // Remove expired value and its expiration timestamp
+      removeValue(namespacedKey);
+      return null;
+    }
+    
+    // Get the value
+    const value = localStorage.getItem(namespacedKey);
+    if (value === null) {
+      return null;
+    }
+    
+    try {
+      return jsonDecode(value);
+    } catch (e) {
+      console.error('Error parsing stored value:', e);
+      return null;
+    }
+  }
+
+  /**
+   * Removes a value and its expiration from localStorage
+   * @param {string} namespacedKey - The namespaced key
+   */
+  function removeValue(namespacedKey) {
+    // Remove the value
+    localStorage.removeItem(namespacedKey);
+    
+    // Remove the expiration
+    const expirationKey = createExpirationKey(namespacedKey);
+    localStorage.removeItem(expirationKey);
+  }
+
+  /**
+   * Removes all values with a specific namespace prefix
+   * @param {string} namespacePrefix - The namespace prefix
+   */
+  function emptyNamespace(namespacePrefix) {
+    const keys = Object.keys(localStorage);
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      if (key.indexOf(namespacePrefix) > -1) {
+        localStorage.removeItem(key);
+      }
+    }
+  }
+
+  /**
+   * Registry class for browser-based key-value storage with encryption,
+   * namespacing, and expiration functionality.
+   */
+  class Registry {
+    /**
+     * Creates a new Registry instance
+     * @param {string} [namespace] - Optional namespace for isolating stored values
+     */
+    constructor(namespace) {
+      // Generate the namespace
+      const namespaceFinal = getNamespace(namespace);
+      
       /**
-       * Gets a key from the key-vaue store, if it does not exist returns NULL
-       * @param {string} key
-       * @returns {Object}
+       * Sets a value in the registry
+       * @param {string} key - The key to store the value under
+       * @param {any} value - The value to store
+       * @param {number} [expires] - Optional expiration time in seconds
        */
-      this.get = function (key) {
-        const keyNamespaced = key + namespaceFinal;
-    
-        if (localStorage.getItem(keyNamespaced) === null) {
-          return null;
-        }
-    
-        var expiresDate = localStorage.getItem(keyNamespaced + "&&expires");
-        if (expiresDate === null) {
-          return null;
-        }
-    
-        const expires = new Date(expiresDate);
-        const now = new Date();
-        const isExpired = now.getTime() > expires.getTime() ? true : false;
-    
-        if (isExpired) {
-          this.remove(keyNamespaced);
-          return null;
-        }
-    
-        const value = window.localStorage.getItem(keyNamespaced);
-    
-        if (value === null) {
-          return null;
-        }
-    
-        if (value === "undefined") {
-          return null;
-        }
-    
-        if (typeof value === "undefined") {
-          return null;
-        }
-    
-        const valueDecoded = jsonDecode(value);
-        return this.decrypt(valueDecoded);
+      this.set = function(key, value, expires) {
+        // Create namespaced key
+        const namespacedKey = createNamespacedKey(key, namespaceFinal);
+        
+        // Encrypt the value (handles null/undefined internally)
+        const encryptedValue = encrypt(value, key);
+        
+        // Store the value
+        setValue(namespacedKey, encryptedValue, expires);
       };
       
       /**
-       * Sets a value to a key
-       * @param {string} key
-       * @param {Object} value
-       * @param {number} expires
-       * @returns {void}
+       * Gets a value from the registry
+       * @param {string} key - The key to retrieve
+       * @returns {any} The stored value or null if not found/expired
        */
-      this.set = function (key, value, expires) {
-        if (typeof value === "undefined") {
-          value = null;
-        }
-    
-        const expiresMilliseconds = typeof expires === "undefined" ? 60000000000 : expires * 1000;
-        const keyNamespaced = key + namespaceFinal;
-    
-        if (value === null) {
-          localStorage.removeItem(keyNamespaced);
-          return;
-        }
-    
-        const encValue = this.encrypt(value);
-        localStorage.setItem(keyNamespaced, jsonEncode(encValue));
-        const expiresTime = new Date().getTime() + expiresMilliseconds;
-        const expiresDate = new Date();
-        expiresDate.setTime(expiresTime);
-        localStorage.setItem(keyNamespaced + "&&expires", expiresDate);
-      };
-    
-      this.remove = function (key) {
-        const keyNamespaced = key + namespaceFinal;
-        localStorage.removeItem(keyNamespaced);
-        localStorage.removeItem(keyNamespaced + "&&expires");
-      };
-    
-      this.empty = function () {
-        var keys = Object.keys(localStorage);
-        for (var i = 0; i < keys.length; i++) {
-          var key = keys[i];
-          if (key.indexOf(namespaceFinal) > -1) {
-            localStorage.removeItem(key);
-          }
-        }
-      };
-    
-      /**
-       * Encrypts an object to a string
-       * @return string
-       */
-      this.encrypt = function (obj) {
-        const jsonString = JSON.stringify(obj);
-        const passLen = password.length;
+      this.get = function(key) {
+        // Create namespaced key
+        const namespacedKey = createNamespacedKey(key, namespaceFinal);
         
-        const result = [];
-        for (var i = 0; i < jsonString.length; i++) {
-          const passOffset = i % passLen;
-          const calAscii = jsonString.charCodeAt(i) + password.charCodeAt(passOffset);
-          result.push(calAscii);
-        }
-    
-        return JSON.stringify(result);
-      };
-    
-      /**
-       * Decrypts an string to the original object
-       * @return object
-       */
-      this.decrypt = function (encStr) {
-        const codesArr = JSON.parse(encStr);
-        const passLen = password.length;
+        // Get the encrypted value
+        const encryptedValue = getValue(namespacedKey);
         
-        const result = [];
-        for (let i = 0; i < codesArr.length; i++) {
-          const passOffset = i % passLen;
-          const calAscii = codesArr[i] - password.charCodeAt(passOffset);
-          result.push(calAscii);
+        // Return null if no value found
+        if (encryptedValue === null) {
+          return null;
         }
-    
-        let str = "";
-        for (let i = 0; i < result.length; i++) {
-          var ch = String.fromCharCode(result[i]);
-          str += ch;
+        
+        // Check for our special null marker
+        if (encryptedValue === "__NULL__") {
+          return null;
         }
-    
-        return JSON.parse(str);
+        
+        try {
+          // Decrypt the value - this will handle JSON parsing internally
+          return decrypt(encryptedValue, key);
+        } catch (e) {
+          console.error('Error decrypting value:', e);
+          return null;
+        }
+      };
+      
+      /**
+       * Removes a value from the registry
+       * @param {string} key - The key to remove
+       */
+      this.remove = function(key) {
+        // Create namespaced key
+        const namespacedKey = createNamespacedKey(key, namespaceFinal);
+        
+        // Remove the value
+        removeValue(namespacedKey);
+      };
+      
+      /**
+       * Removes all values in the current namespace
+       */
+      this.empty = function() {
+        // Empty the namespace
+        emptyNamespace(namespaceFinal);
       };
     }
+  }
 
   // Export for module environments while preserving browser functionality
   if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
@@ -238,5 +372,7 @@
       window.Registry = Registry;
     }
   }
+
+  return Registry;
 
 }));
