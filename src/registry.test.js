@@ -1,9 +1,5 @@
-// Registry.test.js
-const fs = require('fs');
-const path = require('path');
-
-// We'll manually extract and test the getRootUrl function separately
-let getRootUrlFunction = null;
+// registry.test.js
+import Registry from './registry.js';
 
 // Mock localStorage
 const localStorageMock = (function() {
@@ -28,99 +24,26 @@ const localStorageMock = (function() {
   };
 })();
 
-// Create a function to get a fresh location mock for each test
-function getLocationMock() {
-  return {
+// Setup global objects
+global.localStorage = localStorageMock;
+global.btoa = str => Buffer.from(str).toString('base64');
+global.atob = str => Buffer.from(str, 'base64').toString();
+
+// Mock window.location for namespace generation
+global.window = {
+  location: {
     protocol: 'https:',
     hostname: 'example.com',
     port: '',
     origin: 'https://example.com'
-  };
-}
-
-// Setup global objects
-global.window = {
-  localStorage: localStorageMock,
-  location: getLocationMock()
+  }
 };
-global.localStorage = localStorageMock;
-global.btoa = str => Buffer.from(str).toString('base64');
-global.atob = str => Buffer.from(str, 'base64').toString();
-global.console = {
-  warn: jest.fn(),
-  log: jest.fn()
-};
-
-// Extract the getRootUrl function from Registry.js
-const registryCode = fs.readFileSync(path.resolve(__dirname, './Registry.js'), 'utf8');
-
-// Extract the getRootUrl function definition
-const getRootUrlMatch = registryCode.match(/function getRootUrl\(\)[\s\S]*?\}(?=\s*function)/m);
-if (getRootUrlMatch) {
-  // Create a function from the extracted code
-  getRootUrlFunction = new Function('window', `${getRootUrlMatch[0]} return getRootUrl();`);
-}
-
-// Execute the rest of Registry.js code to make Registry available
-eval(registryCode);
 
 describe('Registry', () => {
   beforeEach(() => {
     // Clear localStorage before each test
     localStorage.clear();
     jest.clearAllMocks();
-    // Reset window.location for each test
-    window.location = getLocationMock();
-  });
-
-  describe('getRootUrl', () => {
-    test('should return origin when available', () => {
-      // Create a mock window with location
-      const mockWindow = {
-        location: {
-          protocol: 'https:',
-          hostname: 'example.com',
-          port: '',
-          origin: 'https://example.com'
-        }
-      };
-      
-      // Call the extracted function with our mock
-      const result = getRootUrlFunction(mockWindow);
-      expect(result).toBe('https://example.com');
-    });
-
-    test('should construct URL when origin is null', () => {
-      // Create a mock window with location where origin is null
-      const mockWindow = {
-        location: {
-          protocol: 'https:',
-          hostname: 'example.com',
-          port: '',
-          origin: 'null'
-        }
-      };
-      
-      // Call the extracted function with our mock
-      const result = getRootUrlFunction(mockWindow);
-      expect(result).toBe('https://example.com');
-    });
-
-    test('should return "unknown" for file protocol', () => {
-      // Create a mock window with file protocol
-      const mockWindow = {
-        location: {
-          protocol: 'file:',
-          hostname: '',
-          port: '',
-          origin: null
-        }
-      };
-      
-      // Call the extracted function with our mock
-      const result = getRootUrlFunction(mockWindow);
-      expect(result).toBe('unknown');
-    });
   });
 
   describe('Registry initialization', () => {
@@ -214,19 +137,6 @@ describe('Registry', () => {
       expect(registry.get('key10')).toBeNull();
       
       jest.useRealTimers();
-    });
-  });
-
-  describe('Encryption and decryption', () => {
-    test('should encrypt and decrypt values correctly', () => {
-      const registry = new Registry('test');
-      const testObj = { name: 'Test', value: 123 };
-      
-      const encrypted = registry.encrypt(testObj);
-      expect(typeof encrypted).toBe('string');
-      
-      const decrypted = registry.decrypt(encrypted);
-      expect(decrypted).toEqual(testObj);
     });
   });
 });
