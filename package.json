@@ -1,18 +1,27 @@
 {
   "name": "registryjs",
-  "version": "1.0.0",
+  "version": "0.2.0",
   "description": "A lightweight key-value store with encryption and expiration",
-  "main": "Registry.js",
+  "main": "dist/registry.js",
+  "module": "dist/registry.esm.js",
+  "unpkg": "dist/registry.min.js",
   "scripts": {
-    "test": "jest"
+    "test": "jest",
+    "build": "rollup -c",
+    "dev": "rollup -c -w"
   },
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@rollup/plugin-terser": "^0.4.4",
     "jest": "^29.7.0",
-    "jest-environment-jsdom": "^29.7.0"
+    "jest-environment-jsdom": "^29.7.0",
+    "rollup": "^4.9.0"
   },
   "jest": {
     "testEnvironment": "jsdom"
-  }
+  },
+  "files": [
+    "dist"
+  ]
 }

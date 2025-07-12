@@ -63,10 +63,6 @@ function base64encode(str) {
     return btoa(str);
 }
 
-function base64decode(str) {
-    return atob(str);
-}
-
 /**
  * Creates a new instance of the Registry class.
  * 
