@@ -22,7 +22,7 @@ in the browser's localStorage with added features like:
 <script src="https://cdn.jsdelivr.net/gh/lesichkovm/registryjs/dist/registry.min.js"></script>
 
 <!-- Specific version -->
-<script src="https://cdn.jsdelivr.net/gh/lesichkovm/registryjs@0.2.0/dist/registry.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/lesichkovm/registryjs@0.3.0/dist/registry.min.js"></script>
 ```
 
 ### Via npm

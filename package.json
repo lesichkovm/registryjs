@@ -1,6 +1,6 @@
 {
   "name": "registryjs",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A lightweight key-value store with encryption and expiration",
   "main": "dist/registry.js",
   "module": "dist/registry.esm.js",
